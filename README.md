@@ -45,6 +45,15 @@
     ```bash
     docker compose exec backend python manage.py collectstatic --no-input
     ```
+Для остановки используйте:
+    ```bash
+    docker compose down
+    ```
+
+Для повторного запуска:
+    ```bash
+    docker compose up
+    ```
 
 # Автор
 

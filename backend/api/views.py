@@ -1,7 +1,6 @@
 from django.db.models import F, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import HttpResponse
-from django.http import FileResponse
 from django.utils import timezone
 from djoser.views import UserViewSet as BaseUserViewSet
 from rest_framework import status, viewsets
@@ -224,7 +223,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
         report_text = self._prepare_text(request, ingredients)
 
         response = HttpResponse(report_text, content_type="text/plain")
-        response["Content-Disposition"] = 'attachment; filename="shopping_cart.txt"'
+        response["Content-Disposition"] = 'attachment; filename="shopping-list.txt"'
         return response
 
     @action(detail=True, methods=["get"], url_path="get-link")
