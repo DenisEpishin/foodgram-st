@@ -24,7 +24,10 @@
     ```bash
     cd foodgram-st/infra
     ```
-3. При необходимости измените файл .env:
+3. Создайте .env файл на основе тестового и отредактируйте его при необходимости:
+    ```bash
+    cp .env.example .env
+    ```
 4. Выполните сборку docker контейнеров:
     ```bash
     docker compose up -d --build
