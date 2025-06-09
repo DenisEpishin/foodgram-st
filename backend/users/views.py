@@ -34,7 +34,6 @@ class LoginView(generics.GenericAPIView):
 
 
 class LogoutView(generics.GenericAPIView):
-
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -59,12 +58,10 @@ class LogoutView(generics.GenericAPIView):
 
 
 class UsersList:
-
     queryset = User.objects.all()
 
 
 class UserMeView(UsersList, generics.RetrieveAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = GetUserSerializer
 
@@ -75,32 +72,29 @@ class UserMeView(UsersList, generics.RetrieveAPIView):
 class UsersView(UsersList, generics.ListAPIView):
 
     def post(self, request):
-        s = self.get_serializer(data=request.data)
-        if s.is_valid():
-            s.save()
-            return Response(s.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        serialized = self.get_serializer(data=request.data)
+        if serialized.is_valid():
+            serialized.save()
+            return Response(serialized.data, status=status.HTTP_201_CREATED)
+        return Response(serialized.errors,
+                        status=status.HTTP_400_BAD_REQUEST)
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
             return NewUserSerializer
-        else:
-            return GetUserSerializer
+        return GetUserSerializer
 
     def get_serializer_context(self):
         return {'request': self.request}
 
 
 class UserInfoView(UsersList, generics.RetrieveAPIView):
-
     serializer_class = GetUserSerializer
     lookup_field = 'id'
     lookup_url_kwarg = 'user_id'
 
 
 class AvatarView(UsersList, generics.UpdateAPIView, generics.DestroyAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = AvatarSerializer
 
@@ -108,31 +102,29 @@ class AvatarView(UsersList, generics.UpdateAPIView, generics.DestroyAPIView):
         return self.request.user
 
     def delete(self, request, *args, **kwargs):
-        u = self.get_object()
-        if u.avatar:
-            path_to_file = u.avatar.path
-            s = u.avatar.storage
-            s.delete(path_to_file)
-            u.avatar.delete(save=False)
-            u.avatar = None
-            u.save()
+        user = self.get_object()
+        if user.avatar:
+            path_to_file = user.avatar.path
+            av_storage = user.avatar.storage
+            av_storage.delete(path_to_file)
+            user.avatar.delete(save=False)
+            user.avatar = None
+            user.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PasswordView(UsersList, generics.GenericAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = PasswordSerializer
 
     def post(self, request, *args, **kwargs):
-        s = self.get_serializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        s.save()
+        serialized = self.get_serializer(data=request.data)
+        serialized.is_valid(raise_exception=True)
+        serialized.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SubscriptionView(generics.ListAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = SubscriptionSerializer
 
@@ -141,28 +133,27 @@ class SubscriptionView(generics.ListAPIView):
 
 
 class SubscribeView(generics.CreateAPIView, generics.DestroyAPIView):
-
     permission_classes = [IsAuthenticated]
     serializer_class = SubscribeSerializer
 
     def create(self, request, *args, **kwargs):
         following = get_object_or_404(User, id=kwargs['user_id'])
-        s = self.get_serializer(data={
+        serialized = self.get_serializer(data={
             'following': following.id,
         })
-        s.is_valid(raise_exception=True)
-        s.save()
-        return Response(s.data, status=status.HTTP_201_CREATED)
+        serialized.is_valid(raise_exception=True)
+        serialized.save()
+        return Response(serialized.data, status=status.HTTP_201_CREATED)
 
     def delete(self, request, *args, **kwargs):
         f_id = kwargs.get('user_id')
         f_user = get_object_or_404(
             User, id=f_id,
         )
-        x, _ = request.user.follower.filter(
+        unfollowing, _ = request.user.follower.filter(
             following=f_user,
         ).delete()
-        if x:
+        if unfollowing:
             return Response(status=status.HTTP_204_NO_CONTENT)
         else:
             return Response(

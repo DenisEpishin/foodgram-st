@@ -8,11 +8,13 @@ class RValidator(UnicodeUsernameValidator):
 
 
 class User(AbstractUser):
-
     class Meta:
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
-        ordering = ["username"]
+        ordering = ["username",]
+
+    def __str__(self):
+        return self.username
 
     username_validator = RValidator()
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name', 'password']
@@ -52,12 +54,8 @@ class User(AbstractUser):
         verbose_name="Аватар"
     )
 
-    def __str__(self):
-        return self.username
-
 
 class Follow(models.Model):
-
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -65,8 +63,14 @@ class Follow(models.Model):
                 name='follow'
             )
         ]
+        ordering = ["follower",]
         verbose_name = 'Подписка'
         verbose_name_plural = 'Подписки'
+
+    def __str__(self):
+        a = self.follower.username
+        b = self.following.username
+        return f'"{a}" подписан на "{b}"'
 
     follower = models.ForeignKey(
         User,
@@ -81,8 +85,3 @@ class Follow(models.Model):
         on_delete=models.CASCADE,
         verbose_name='Подписан на',
     )
-
-    def __str__(self):
-        a = self.follower.username
-        b = self.following.username
-        return f'"{a}" подписан на "{b}"'

@@ -1,3 +1,4 @@
+from backend.constants import MIN_INT, MAX_INT, MAX_IMAGE_SIZE, MB_SIZE
 from drf_extra_fields.fields import Base64ImageField
 from users.serializers import GetUserSerializer
 from rest_framework import serializers
@@ -5,9 +6,8 @@ from .models import Recipe, IRLinkModel, Ingredient, FavRecipe, Basket
 
 
 class MealSerializer(serializers.ModelSerializer):
-
     id = serializers.IntegerField()
-    amount = serializers.IntegerField(min_value=1)
+    amount = serializers.IntegerField(min_value=MIN_INT, max_value=MAX_INT)
 
     class Meta:
         model = IRLinkModel
@@ -15,7 +15,6 @@ class MealSerializer(serializers.ModelSerializer):
 
 
 class IRLinkSerializer(serializers.ModelSerializer):
-
     id = serializers.ReadOnlyField(source='ingredient.id')
     name = serializers.ReadOnlyField(source='ingredient.name')
     measurement_unit = serializers.ReadOnlyField(
@@ -33,7 +32,6 @@ class IRLinkSerializer(serializers.ModelSerializer):
 
 
 class GetRecipeSerializer(serializers.ModelSerializer):
-
     author = GetUserSerializer(read_only=True)
     image = Base64ImageField()
     is_favorited = serializers.SerializerMethodField()
@@ -62,25 +60,19 @@ class GetRecipeSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         if user.is_authenticated:
             return obj.fav_r.filter(user=user).exists()
-        else:
-            return False
+        return False
 
     def get_is_in_shopping_cart(self, obj):
         user = self.context['request'].user
         if user.is_authenticated:
             return obj.basket_r.filter(user=user).exists()
-        else:
-            return False
+        return False
 
 
 class NewRecipeSerializer(serializers.ModelSerializer):
-
     image = Base64ImageField(required=True)
-    cooking_time = serializers.IntegerField(min_value=1)
-    ingredients = serializers.ListField(
-        child=MealSerializer(write_only=True),
-        write_only=True
-    )
+    cooking_time = serializers.IntegerField(min_value=MIN_INT, max_value=MAX_INT)
+    ingredients = MealSerializer(many=True, write_only=True)
 
     class Meta:
         model = Recipe
@@ -94,177 +86,57 @@ class NewRecipeSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, data):
-        i = data.pop('ingredients')
-        r = Recipe.objects.create(author=self.context['request'].user, **data)
-        self.addI(r, i)
-        return r
-
-    def validate(self, data):
-        try:
-            image = data['image']
-        except Exception:
-            raise serializers.ValidationError(
-                {"detail": "Выберите картинку правильного формата"}
-            )
-        if image:
-            if image.size > 5 * 1024 * 1024:
-               raise serializers.ValidationError(
-                    "Максимальный размер изображения 5Мб."
-                )
-        else:
-            raise serializers.ValidationError(
-                {"detail": "Выберите картинку правильного формата"}
-            )
-        try:
-            ingredients = data['ingredients']
-        except Exception:
-            raise serializers.ValidationError(
-                {"detail": "Ингредиенты не найдены."}
-            )
-        if not isinstance(ingredients, list):
-            raise serializers.ValidationError(
-                {"detail": "В качестве ингредиентов ожидается список."}
-            )
-        i = [j["id"] for j in ingredients]
-        if len(i) != len(set(i)):
-            raise serializers.ValidationError({
-                "detail": "Ингредиенты не должны повторяться."
-            })
-        iid = []
-        for i in ingredients:
-            try:
-                iid.append({"id": i["id"], "amount": int(i["amount"])})
-            except (KeyError, ValueError):
-                raise serializers.ValidationError(
-                    {
-                        "detail":
-                            "Ошибка формата ингредиента."
-                    }
-                )
-        if not iid:
-            raise serializers.ValidationError(
-                {"detail": "В блюде отсутствуют ингредиенты."}
-            )
-        ids = [j["id"] for j in iid]
-        good_ids = set(Ingredient.objects.filter(
-            id__in=ids
-        ).values_list('id', flat=True))
-        bad_ids = set(ids) - good_ids
-        if bad_ids:
-            raise serializers.ValidationError(
-                {"detail":f"Некоторые ингредиенты не найдены."}
-            )
-        data['ingredients'] = iid
-        return data
-
-    def addI(self, recipe, i_list):
-        i = [IRLinkModel(
-            recipe=recipe,
-            ingredient_id=j['id'],
-            amount=j['amount']) for j in i_list
-        ]
-        IRLinkModel.objects.bulk_create(i)
-
-    def to_representation(self, instance):
-        return GetRecipeSerializer(
-            instance,
-            context=self.context,
-        ).data
-
-
-class UpdateRecipeSerializer(serializers.ModelSerializer):
-
-    image = Base64ImageField(required=False, )
-    cooking_time = serializers.IntegerField(min_value=1)
-    ingredients = serializers.ListField(
-        child=MealSerializer(write_only=True),
-        write_only=True
-    )
-
-    class Meta:
-        model = Recipe
-        fields = [
-            'id',
-            'ingredients',
-            'image',
-            'name',
-            'text',
-            'cooking_time'
-        ]
+        ingredients = data.pop('ingredients')
+        recipe = Recipe.objects.create(author=self.context['request'].user, **data)
+        self.add_ingredients(recipe, ingredients)
+        return recipe
 
     def update(self, instance, data):
-        i = data.pop('ingredients', None)
-        if i is None:
-            raise serializers.ValidationError("")
+        ingredients = data.pop('ingredients', None)
+        if ingredients is None:
+            raise serializers.ValidationError("Добавьте ингредиенты")
         for attr, value in data.items():
             setattr(instance, attr, value)
         instance.save()
         instance.r_link_i.all().delete()
-        self.addI(instance, i)
+        self.add_ingredients(instance, ingredients)
         return instance
 
     def validate(self, data):
-        try:
-            image = data['image']
-        except Exception:
-            raise serializers.ValidationError(
-                {"detail": "Выберите картинку правильного формата"}
-            )
+        image = data.get('image')
         if image:
-            if image.size > 5 * 1024 * 1024:
-               raise serializers.ValidationError(
-                    "Максимальный размер изображения 5Мб."
+            if image.size > MAX_IMAGE_SIZE * MB_SIZE:
+                raise serializers.ValidationError(
+                    f"Максимальный размер изображения {MAX_IMAGE_SIZE}Мб."
                 )
         else:
             raise serializers.ValidationError(
                 {"detail": "Выберите картинку правильного формата"}
             )
-        try:
-            ingredients = data['ingredients']
-        except Exception:
+        ingredients = data.get('ingredients')
+        if not ingredients:
             raise serializers.ValidationError(
                 {"detail": "Ингредиенты не найдены."}
-            )
-        if not isinstance(ingredients, list):
-            raise serializers.ValidationError(
-                {"detail": "В качестве ингредиентов ожидается список."}
             )
         i = [j["id"] for j in ingredients]
         if len(i) != len(set(i)):
             raise serializers.ValidationError({
                 "detail": "Ингредиенты не должны повторяться."
             })
-        iid = []
-        for i in ingredients:
-            try:
-                iid.append({"id": i["id"], "amount": int(i["amount"])})
-            except (KeyError, ValueError):
-                raise serializers.ValidationError(
-                    {"detail": "Ошибка формата ингредиента."}
-                )
-        if not iid:
+        ingredients_exist = Ingredient.objects.filter(id__in=i).count()
+        if ingredients_exist != len(i):
             raise serializers.ValidationError(
-                {"detail": "В блюде отсутствуют ингредиенты."}
+                {"detail": "Некоторые ингредиенты не найдены."}
             )
-        ids = [j["id"] for j in iid]
-        good_ids = set(Ingredient.objects.filter(
-            id__in=ids
-        ).values_list('id', flat=True))
-        bad_ids = set(ids) - good_ids
-        if bad_ids:
-            raise serializers.ValidationError(
-                {"detail": f"Некоторые ингредиенты не найдены."}
-            )
-        data['ingredients'] = iid
         return data
 
-    def addI(self, recipe, i_list):
-        i = [IRLinkModel(
+    def add_ingredients(self, recipe, i_list):
+        ingredients_to_add = [IRLinkModel(
             recipe=recipe,
             ingredient_id=j['id'],
             amount=j['amount']) for j in i_list
         ]
-        IRLinkModel.objects.bulk_create(i)
+        IRLinkModel.objects.bulk_create(ingredients_to_add)
 
     def to_representation(self, instance):
         return GetRecipeSerializer(
@@ -274,7 +146,6 @@ class UpdateRecipeSerializer(serializers.ModelSerializer):
 
 
 class IngredientSerializer(serializers.ModelSerializer):
-
     class Meta:
         model = Ingredient
         fields = [
@@ -285,7 +156,6 @@ class IngredientSerializer(serializers.ModelSerializer):
 
 
 class FavoriteSerializer(serializers.ModelSerializer):
-
     id = serializers.IntegerField(source='recipe.id', read_only=True)
     name = serializers.CharField(source='recipe.name', read_only=True)
     image = serializers.ImageField(source='recipe.image', read_only=True)
@@ -304,12 +174,11 @@ class FavoriteSerializer(serializers.ModelSerializer):
 
 
 class BasketSerializer(serializers.ModelSerializer):
-
     id = serializers.IntegerField(source='recipe.id', read_only=True)
     name = serializers.CharField(source='recipe.name', read_only=True)
     image = serializers.ImageField(source='recipe.image', read_only=True)
     cooking_time = serializers.IntegerField(
-        source='recipe.cooking_time', read_only=True,
+        source='recipe.cooking_time', read_only=True
     )
 
     class Meta:

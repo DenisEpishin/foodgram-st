@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import (IsAuthenticated,
@@ -8,10 +8,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from rest_framework.exceptions import ValidationError
-from .models import Recipe, Ingredient, FavRecipe, Basket
-from .serializers import (GetRecipeSerializer, UpdateRecipeSerializer,
-                          NewRecipeSerializer, IngredientSerializer,
-                          FavoriteSerializer, BasketSerializer)
+from .models import Recipe, Ingredient, FavRecipe, Basket, IRLinkModel
+from .serializers import (GetRecipeSerializer, NewRecipeSerializer,
+                          IngredientSerializer, FavoriteSerializer,
+                          BasketSerializer)
 
 
 class IsAuthorOrReadOnly(BasePermission):
@@ -20,52 +20,48 @@ class IsAuthorOrReadOnly(BasePermission):
 
 
 class RecipesList:
-
     queryset = Recipe.objects.all()
 
 
 class RecipeListView(RecipesList, generics.ListCreateAPIView):
-
     permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         rows = super().get_queryset()
         user = self.request.user
-        f = self.request.query_params.get('author')
-        if f:
-            rows = rows.filter(author_id=f)
-        f = self.request.query_params.get('is_favorited')
-        if f and user.is_authenticated:
-            f_us = Q(fav_r__user=user)
-            rows = rows.filter(f_us if f == '1' else ~f_us)
-        f = self.request.query_params.get('is_in_shopping_cart')
-        if f and user.is_authenticated:
-            f_us = Q(basket_r__user=user)
-            rows = rows.filter(f_us if f == '1' else ~f_us)
+        author_id = self.request.query_params.get('author')
+        if author_id:
+            rows = rows.filter(author_id=author_id)
+        favorited = self.request.query_params.get('is_favorited')
+        if favorited and user.is_authenticated:
+            filter_for_user = Q(fav_r__user=user)
+            rows = rows.filter(filter_for_user
+                               if favorited == '1' else ~filter_for_user)
+        in_basket = self.request.query_params.get('is_in_shopping_cart')
+        if in_basket and user.is_authenticated:
+            filter_for_user = Q(basket_r__user=user)
+            rows = rows.filter(filter_for_user
+                               if in_basket == '1' else ~filter_for_user)
         return rows
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
             return NewRecipeSerializer
-        else:
-            return GetRecipeSerializer
+        return GetRecipeSerializer
 
 
 class RecipeView(RecipesList, generics.RetrieveUpdateDestroyAPIView):
-
     permission_classes = [IsAuthorOrReadOnly]
     lookup_field = 'id'
     lookup_url_kwarg = 'recipe_id'
 
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
-            return UpdateRecipeSerializer
-        else:
-            return GetRecipeSerializer
+            return NewRecipeSerializer
+        return GetRecipeSerializer
 
 
 class IngredientListView(generics.ListAPIView):
-
     serializer_class = IngredientSerializer
     pagination_class = None
 
@@ -80,7 +76,6 @@ class IngredientListView(generics.ListAPIView):
 
 
 class IngredientView(generics.RetrieveAPIView):
-
     lookup_field = 'id'
     lookup_url_kwarg = 'ingredient_id'
     serializer_class = IngredientSerializer
@@ -88,7 +83,6 @@ class IngredientView(generics.RetrieveAPIView):
 
 
 class ShortLinkView(RecipesList, generics.RetrieveAPIView):
-
     lookup_field = 'id'
     lookup_url_kwarg = 'recipe_id'
 
@@ -99,32 +93,32 @@ class ShortLinkView(RecipesList, generics.RetrieveAPIView):
 
 
 class FavView(generics.CreateAPIView, generics.DestroyAPIView):
-
     permission_classes = [IsAuthenticated]
     lookup_field = 'id'
     lookup_url_kwarg = 'recipe_id'
     serializer_class = FavoriteSerializer
 
     def create(self, request, *args, **kwargs):
-        r_id = kwargs['recipe_id']
-        r = get_object_or_404(Recipe, id=r_id)
+        recipe_id = kwargs['recipe_id']
+        recipe_in_fav = get_object_or_404(Recipe, id=recipe_id)
         if request.user.fav_u.filter(
-                recipe=r,
+                recipe=recipe_in_fav,
         ).exists():
             return Response(
                 {"detail": "Рецепт уже в избранном."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        f = FavRecipe.objects.create(user=request.user, recipe=r)
-        serializer = self.get_serializer(f)
+        favorite = FavRecipe.objects.create(user=request.user,
+                                            recipe=recipe_in_fav)
+        serializer = self.get_serializer(favorite)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def get_object(self):
-        r_id = self.kwargs['recipe_id']
-        r = get_object_or_404(Recipe, id=r_id)
+        recipe_id = self.kwargs['recipe_id']
+        recipe_in_fav = get_object_or_404(Recipe, id=recipe_id)
         try:
             return FavRecipe.objects.get(
-                user=self.request.user, recipe=r,
+                user=self.request.user, recipe=recipe_in_fav,
             )
         except FavRecipe.DoesNotExist:
             raise ValidationError(
@@ -132,30 +126,32 @@ class FavView(generics.CreateAPIView, generics.DestroyAPIView):
                 code=status.HTTP_400_BAD_REQUEST
             )
 
-class BasketView(generics.CreateAPIView, generics.DestroyAPIView):
 
+class BasketView(generics.CreateAPIView, generics.DestroyAPIView):
     permission_classes = [IsAuthenticated]
     lookup_field = 'id'
     lookup_url_kwarg = 'recipe_id'
     serializer_class = BasketSerializer
 
     def create(self, request, *args, **kwargs):
-        r_id = kwargs['recipe_id']
-        r = get_object_or_404(Recipe, id=r_id)
-        if Basket.objects.filter(user=request.user, recipe=r).exists():
+        recipe_id = kwargs['recipe_id']
+        recipe_in_basket = get_object_or_404(Recipe, id=recipe_id)
+        if request.user.basket_u.filter(recipe=recipe_in_basket).exists():
             return Response(
                 {"detail": "Рецепт уже в списке покупок."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        f = Basket.objects.create(user=request.user, recipe=r)
-        s = self.get_serializer(f)
-        return Response(s.data, status=status.HTTP_201_CREATED)
+        user_basket = Basket.objects.create(user=request.user,
+                                            recipe=recipe_in_basket)
+        user_basket = self.get_serializer(user_basket)
+        return Response(user_basket.data, status=status.HTTP_201_CREATED)
 
     def get_object(self):
-        r_id = self.kwargs['recipe_id']
-        r = get_object_or_404(Recipe, id=r_id)
+        recipe_id = self.kwargs['recipe_id']
+        recipe_in_basket = get_object_or_404(Recipe, id=recipe_id)
         try:
-            return Basket.objects.get(user=self.request.user, recipe=r)
+            return Basket.objects.get(user=self.request.user,
+                                      recipe=recipe_in_basket)
         except Basket.DoesNotExist:
             raise ValidationError(
                 {"detail": "Нет такого рецепта в списке покупок."},
@@ -164,33 +160,31 @@ class BasketView(generics.CreateAPIView, generics.DestroyAPIView):
 
 
 class BasketDownload(APIView):
-
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         rtext = ["Выбранные рецепты:\n"]
-        shopping_cart = self._get_user_basket(request.user)
-        if not shopping_cart.exists():
-            raise ValidationError({'detail': 'Ваш список покупок пуст.'})
-        ingredients = {}
-        measurement = {}
-        for i in shopping_cart:
-            rtext.append(i.recipe.name)
-            for j in i.recipe.r_link_i.all():
-                if j.ingredient.name in ingredients:
-                    ingredients[j.ingredient.name] += j.amount
-                else:
-                    ingredients[j.ingredient.name] = j.amount
-                    measurement[j.ingredient.name] = j.ingredient.measurement_unit
+        basket_recipes, basket_ingredients = (
+            self.get_basket_data(request.user))
+        for i in basket_recipes:
+            rtext.append(i.name)
         rtext.append("-" * 50)
         rtext.append("\nНеобходимые продукты:\n")
-        for key, value in ingredients.items():
-            rtext.append(f"{key}: {value} {measurement[key]}")
+        for i in basket_ingredients:
+            rtext.append(f"{i['ingredient__name']}: {i['amount']} "
+                         f"{i['ingredient__measurement_unit']}"
+                         )
         response = HttpResponse("\n".join(rtext), content_type="text/plain")
         response["Content-Disposition"] = 'attachment; filename="shopping-list.txt"'
         return response
 
-    def _get_user_basket(self, user):
-        return user.basket_u.select_related(
-            "recipe"
-        ).prefetch_related("recipe__r_link_i__ingredient").all()
+    def get_basket_data(self, user):
+        recipes_query = user.basket_u.all().order_by('recipe__name')
+        basket_recipes = [i.recipe for i in recipes_query]
+        basket_ingredients = (
+            IRLinkModel.objects.filter(recipe__in=basket_recipes)
+            .values("ingredient__name", "ingredient__measurement_unit")
+            .annotate(amount=Sum("amount"))
+        )
+        return basket_recipes, basket_ingredients
+

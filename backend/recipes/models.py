@@ -1,4 +1,5 @@
-from django.core.validators import MinValueValidator
+from backend.constants import MIN_INT, MAX_INT
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from users.models import User
 
@@ -8,6 +9,9 @@ class Recipe(models.Model):
         ordering = ['-id', ]
         verbose_name = 'Рецепт'
         verbose_name_plural = 'Рецепты'
+
+    def __str__(self):
+        return self.name
 
     author = models.ForeignKey(
         User,
@@ -35,26 +39,29 @@ class Recipe(models.Model):
         verbose_name='Текстовое описание'
     )
 
-    cooking_time = models.PositiveIntegerField(
+    cooking_time = models.PositiveSmallIntegerField(
         unique=False,
         blank=False,
         verbose_name="Время приготовления в минутах",
         validators=[
-            MinValueValidator(1,
-                              "Минимальное время приготовления 1 минута")
+            MinValueValidator(
+                MIN_INT,
+                f"Минимальное время приготовления {MIN_INT} минута"),
+            MaxValueValidator(
+                MAX_INT,
+                f"Максимальное время приготовления {MAX_INT} минута")
         ]
     )
 
-    def __str__(self):
-        return self.name
-
 
 class Ingredient(models.Model):
-
     class Meta:
         ordering = ['id', ]
         verbose_name = 'Ингредиент'
         verbose_name_plural = 'Ингредиенты'
+
+    def __str__(self):
+        return self.name
 
     name = models.CharField(
         max_length=255,
@@ -70,9 +77,6 @@ class Ingredient(models.Model):
         verbose_name='Единица измерения'
     )
 
-    def __str__(self):
-        return self.name
-
 
 class IRLinkModel(models.Model):
     class Meta:
@@ -82,8 +86,16 @@ class IRLinkModel(models.Model):
                 name='i_link_r'
             )
         ]
+        ordering = ['id', ]
         verbose_name = 'Ингредиент блюда'
         verbose_name_plural = 'Ингредиенты блюд'
+
+    def __str__(self):
+        a = self.ingredient.measurement_unit
+        return (
+            f"{self.amount}{a} {self.ingredient.name}"
+            f" для {self.recipe.name}"
+        )
 
     recipe = models.ForeignKey(
         Recipe,
@@ -101,16 +113,17 @@ class IRLinkModel(models.Model):
 
     amount = models.PositiveSmallIntegerField(
         blank=False,
-        validators=[MinValueValidator(1, "Минимум 1")],
+
+        validators=[
+            MinValueValidator(
+                MIN_INT,
+                f"Минимум {MIN_INT}"),
+            MaxValueValidator(
+                MAX_INT,
+                f"Максимум {MAX_INT}")
+        ],
         verbose_name='Количество'
     )
-
-    def __str__(self):
-        a = self.ingredient.measurement_unit
-        return (
-            f"{self.amount}{a} {self.ingredient.name}"
-            f" для {self.recipe.name}"
-        )
 
 
 class FavRecipe(models.Model):
@@ -121,8 +134,14 @@ class FavRecipe(models.Model):
                 name='fav_r'
             )
         ]
+        ordering = ['id', ]
         verbose_name = 'Рецепт в избранном'
         verbose_name_plural = 'Избранные рецепты'
+
+    def __str__(self):
+        a = self.user.username
+        b = self.recipe.name
+        return f"Рецепт {b} в избранном у {a}"
 
     user = models.ForeignKey(
         User,
@@ -138,11 +157,6 @@ class FavRecipe(models.Model):
         verbose_name='Рецепт'
     )
 
-    def __str__(self):
-        a = self.user.username
-        b = self.recipe.name
-        return f"Рецепт {b} в избранном у {a}"
-
 
 class Basket(models.Model):
     class Meta:
@@ -152,8 +166,14 @@ class Basket(models.Model):
                 name='basket'
             )
         ]
+        ordering = ['id', ]
         verbose_name = 'Список покупок'
         verbose_name_plural = 'Списки покупок'
+
+    def __str__(self):
+        a = self.user.username
+        b = self.recipe.name
+        return f"Рецепт {b} в корзине у {a}"
 
     user = models.ForeignKey(
         User,
@@ -168,8 +188,3 @@ class Basket(models.Model):
         related_name='basket_r',
         verbose_name='Рецепт'
     )
-
-    def __str__(self):
-        a = self.user.username
-        b = self.recipe.name
-        return f"Рецепт {b} в корзине у {a}"

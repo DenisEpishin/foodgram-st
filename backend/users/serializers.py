@@ -1,3 +1,4 @@
+from backend.constants import MIN_INT, MAX_INT, MAX_IMAGE_SIZE, MB_SIZE
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as Dve
@@ -21,14 +22,14 @@ class NewUserSerializer(serializers.ModelSerializer):
 
     def create(self, data):
         try:
-            u = User.objects.create_user(
+            user = User.objects.create_user(
                 email=data['email'],
                 username=data['username'],
                 first_name=data['first_name'],
                 last_name=data['last_name'],
                 password=data['password']
             )
-            return u
+            return user
         except Exception as e:
             raise serializers.ValidationError(str(e))
 
@@ -45,9 +46,9 @@ class NewUserSerializer(serializers.ModelSerializer):
             return value
 
     def validate_password(self, value):
-        u = self.context['request'].user
+        user = self.context['request'].user
         try:
-            validate_password(value, u)
+            validate_password(value, user)
         except Dve as e:
             raise serializers.ValidationError(list(e.messages))
         return value
@@ -84,8 +85,7 @@ class GetUserSerializer(serializers.ModelSerializer):
         if (r and r.user.is_authenticated and
                 r.user.follower.filter(following=obj).exists()):
             return True
-        else:
-            return False
+        return False
 
 
 class AvatarSerializer(serializers.ModelSerializer):
@@ -98,8 +98,9 @@ class AvatarSerializer(serializers.ModelSerializer):
 
     def validate_avatar(self, value):
         try:
-            if value.size > 5 * 1024 * 1024:
-                raise serializers.ValidationError("Максимальный размер изображения 5Мб.")
+            if value.size > MAX_IMAGE_SIZE * MB_SIZE:
+                    raise serializers.ValidationError(
+                        f"Максимальный размер изображения {MAX_IMAGE_SIZE}Мб.")
         except Dve as e:
             raise serializers.ValidationError(list(e.messages))
         return value
@@ -126,24 +127,24 @@ class PasswordSerializer(serializers.ModelSerializer):
         ]
 
     def validate_new_password(self, value):
-        u = self.context['request'].user
+        user = self.context['request'].user
         try:
-            validate_password(value, u)
+            validate_password(value, user)
         except Dve as e:
             raise serializers.ValidationError(list(e.messages))
         return value
 
     def validate_current_password(self, value):
-        u = self.context['request'].user
-        if authenticate(username=u.email, password=value):
+        user = self.context['request'].user
+        if authenticate(username=user.email, password=value):
             return value
         else:
             raise serializers.ValidationError("Неверный старый пароль.")
 
     def save(self):
-        u = self.context['request'].user
-        u.set_password(self.validated_data['new_password'])
-        u.save()
+        user = self.context['request'].user
+        user.set_password(self.validated_data['new_password'])
+        user.save()
 
 
 class UserRecipeSerializer(serializers.ModelSerializer):
@@ -195,10 +196,10 @@ class SubscriptionSerializer(GetUserSerializer):
                 rows = rows[:r_max]
             except ValueError:
                 pass
-        s = UserRecipeSerializer(
+        serialized = UserRecipeSerializer(
             rows, many=True, context=self.context,
         )
-        return s.data
+        return serialized.data
 
     def get_recipes_count(self, obj):
         return obj.recipes_of_author.count()
