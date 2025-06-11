@@ -28,11 +28,11 @@
     ```bash
     cp .env.example .env
     ```
-4. Выполните сборку docker контейнеров:
+4. Выполните сборку и запуск docker контейнеров:
     ```bash
-    docker compose up -d --build
+    docker compose up --build
     ```
-5. Создайте суперпользователя:
+5. Создайте суперпользователя [опционально]:
     ```bash
     docker exec -it foodgram-back python manage.py createsuperuser
     ```
