@@ -28,21 +28,25 @@
     ```bash
     cp .env.example .env
     ```
-4. Выполните сборку и запуск docker контейнеров:
+4. При первом запуске нужно дождаться сборки docker контейнеров и проводения миграций:
     ```bash
     docker compose up --build
     ```
-5. Создайте суперпользователя [опционально]:
-    ```bash
-    docker exec -it foodgram-back python manage.py createsuperuser
-    ```
-6. Для остановки используйте:
+5. Для остановки в интерактивном режиме используйте CTRL-C, в фоновом режиме:
     ```bash
     docker compose down
     ```
-7. Для повторного запуска:
+6. Для повторного запуска в интерактивном режиме:
     ```bash
     docker compose up
+    ```
+7. Для повторного запуска в фоновом режиме
+    ```bash
+    docker compose up --d
+    ```
+8. Создание суперпользователя [опционально]:
+    ```bash
+    docker exec -it foodgram-back python manage.py createsuperuser
     ```
 
 # Автор
